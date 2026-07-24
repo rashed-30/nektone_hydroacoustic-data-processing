@@ -1,24 +1,74 @@
 name: Build desktop apps
 
-# Two ways to run this:
-#   1. Actions tab -> "Build desktop apps" -> "Run workflow"   (no code, no tag)
-#   2. Push a tag starting with v -> also publishes a Release
+# Triggers:
+#   push to main      -> preflight + tests only (fast, ~1 min, no .exe)
+#   Run workflow      -> full build, produces a downloadable .exe
+#   push a v* tag     -> full build + publishes a Release
 on:
+  push:
+    branches: [main]
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       build_macos:
         description: "Also build for macOS (slower, not needed for Windows users)"
         type: boolean
         default: false
-  push:
-    tags: ["v*"]
 
 permissions:
   contents: write
 
 jobs:
+  # ---------------------------------------------------------------------
+  # Cheap structural check. Runs on every push so an incomplete upload is
+  # reported in seconds, in plain English, instead of surfacing 20 minutes
+  # later as a confusing pip or pytest error.
+  # ---------------------------------------------------------------------
+  preflight:
+    name: Check repository contents
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify the source code was uploaded
+        shell: bash
+        run: |
+          missing=()
+          for path in pyproject.toml README.md src/nektone/__init__.py \
+                      src/nektone/app.py src/nektone/cli.py \
+                      src/nektone/core/process.py src/nektone/gui/main_window.py \
+                      packaging/nektone.spec tests/test_core.py; do
+            [ -e "$path" ] || missing+=("$path")
+          done
+
+          if [ ${#missing[@]} -ne 0 ]; then
+            echo "::error::The repository is missing ${#missing[@]} required file(s)."
+            echo ""
+            echo "=============================================================="
+            echo " INCOMPLETE UPLOAD"
+            echo "=============================================================="
+            echo ""
+            echo "These files are missing from the repository:"
+            printf '  - %s\n' "${missing[@]}"
+            echo ""
+            echo "This normally means build.yml was uploaded but the rest of the"
+            echo "project was not. On the repository's Code tab, use"
+            echo "'Add file' -> 'Upload files' and drag in EVERYTHING from the"
+            echo "extracted folder: src, packaging, tests, pyproject.toml,"
+            echo "README.md and .gitignore."
+            echo ""
+            echo "What the repository currently contains:"
+            ls -la
+            echo ""
+            exit 1
+          fi
+
+          echo "All required files present."
+          find src -name '*.py' | wc -l | xargs echo "Python modules:"
+
   test:
     name: Tests
+    needs: preflight
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,9 +79,15 @@ jobs:
       - run: pip install xarray pandas numpy dask pytest
       - run: pytest -q
 
+  # ---------------------------------------------------------------------
+  # The expensive jobs. Skipped on ordinary pushes to main so that saving a
+  # file does not spend 30 minutes of runner time; run them from the Actions
+  # tab, or by pushing a v* tag.
+  # ---------------------------------------------------------------------
   windows:
     name: Windows
     needs: test
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -63,9 +119,29 @@ jobs:
           $size = (Get-ChildItem dist/NekTone -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
           Write-Host ("Build OK - {0:N0} MB" -f $size)
 
+      - name: Launch the frozen app and check every import
+        shell: pwsh
+        run: |
+          # Runs the real .exe, exercising the packaged import graph - the only
+          # way to catch a missing hidden import before a user does. A windowed
+          # build has no stdout, so the report comes back through a log file.
+          $p = Start-Process -FilePath "dist/NekTone/NekTone.exe" `
+                             -ArgumentList "--selftest" `
+                             -WorkingDirectory "dist/NekTone" `
+                             -Wait -PassThru
+          $log = "dist/NekTone/nektone-selftest.log"
+          if (Test-Path $log) { Get-Content $log } else { Write-Host "No self-test log produced." }
+          if ($p.ExitCode -ne 0) {
+            Write-Error "The frozen application failed its self-test (exit $($p.ExitCode))."
+            exit 1
+          }
+          Write-Host "Self-test passed."
+
       - name: Package
         shell: pwsh
-        run: Compress-Archive -Path dist/NekTone -DestinationPath NekTone-windows.zip
+        run: |
+          Remove-Item dist/NekTone/nektone-selftest.log -ErrorAction SilentlyContinue
+          Compress-Archive -Path dist/NekTone -DestinationPath NekTone-windows.zip
 
       - uses: actions/upload-artifact@v4
         with:
@@ -83,7 +159,6 @@ jobs:
   macos:
     name: macOS
     needs: test
-    # Only when explicitly requested, or on a tagged release.
     if: inputs.build_macos || startsWith(github.ref, 'refs/tags/v')
     runs-on: macos-latest
     continue-on-error: true   # a macOS failure must never hide a good Windows build
