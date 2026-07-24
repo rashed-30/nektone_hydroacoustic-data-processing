@@ -148,15 +148,34 @@ tick, then refresh the release — the file will be there.
 
 ---
 
-## If the run fails
+## Reading a failed run
 
-A red X is informative, not a disaster. Click the failed job, then the failed
-step, to see the log.
+A red X is information, not a disaster. To see why:
+
+1. Click the run's title.
+2. In the left sidebar, click the job with the red X.
+3. Click the red step to expand it. The error is usually in the last 10 lines.
+
+### What runs when
+
+| Trigger | Jobs that run | Time |
+|---|---|---|
+| Any push to `main` | Check repository contents, Tests | ~1 min |
+| **Run workflow** button | …plus the Windows build | ~30 min |
+| Push a `v*` tag | …plus a published Release | ~30 min |
+
+Ordinary pushes deliberately skip the expensive build, so editing a file doesn't
+spend 30 minutes of runner time. **Saving a file will never produce an `.exe` —
+you have to press Run workflow.**
+
+### Common failures
 
 | What the log says | What it means |
 |---|---|
+| `INCOMPLETE UPLOAD` in *Check repository contents* | The code wasn't uploaded, only `build.yml`. The step lists exactly which files are missing and what the repository does contain |
 | `No such file or directory: pyproject.toml` | You uploaded the wrapper folder instead of its contents |
 | Nothing in the Actions tab at all | `.github` didn't upload — see Step 3 |
+| `no tests ran` / exit code 5 | Same cause: `tests/` is missing |
 | `Could not find a version that satisfies echopype` | Rare; a PyPI hiccup. Re-run the workflow |
 | `NekTone.exe was not produced` | The freeze failed; the real error is in the **Freeze** step above it |
 | `ModuleNotFoundError` in the Freeze step | A missing hidden import — add it to `hiddenimports` in `packaging/nektone.spec` |

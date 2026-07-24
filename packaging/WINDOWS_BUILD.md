@@ -164,6 +164,17 @@ Fix it by adding `"x"` to the `hiddenimports` list in the spec and rebuilding.
 This is the single most useful debugging tool in the whole process, and it is
 why the debug build comes before the real one.
 
+### Rung 6b — Check the frozen imports
+
+```bat
+dist\NekTone\NekTone.exe --selftest
+type dist\NekTone\nektone-selftest.log
+```
+
+Imports every module and exits without opening a window. Any `FAIL` line names
+a module to add to `hiddenimports` in the spec. This exercises the real packaged
+import graph, which is the only way to find these before a user does.
+
 ### Rung 7 — Build the real .exe
 
 Once the debug build launches cleanly, set `console=False` back in the spec and
@@ -207,6 +218,7 @@ because it hides the output you need when something goes wrong.
 | `'py' is not recognized` | Python not on PATH | Reinstall, tick **Add python.exe to PATH** |
 | `pip install -e .` fails on `echopype` | Python 3.13 | Use 3.12: `py -3.12 -m venv .venv` |
 | Window flashes and vanishes | Missing hidden import | Rung 6 — build with `console=True` |
+| `attempted relative import with no known parent package` | The spec points at `src/nektone/__main__.py` instead of `packaging/entry.py` | Fixed in v1.0.1; check `ENTRY =` in the spec |
 | `Could not load the Qt platform plugin "windows"` | Another Qt binding installed | Clean venv; ensure no PyQt5/PySide2 |
 | App runs from source, `.exe` does not | Packaging | Rung 6; add the named module to `hiddenimports` |
 | Windows Defender blocks the exe | Unsigned PyInstaller binary | Expected. Add an exclusion, or code-sign for wider distribution |

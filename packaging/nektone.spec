@@ -13,7 +13,11 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 ROOT = Path(SPECPATH).parent
-ENTRY = ROOT / "src" / "nektone" / "__main__.py"
+# NOT src/nektone/__main__.py: PyInstaller runs the entry script as a
+# top-level module, so its relative imports have no parent package and the
+# frozen app dies with "attempted relative import with no known parent
+# package". packaging/entry.py imports the package absolutely instead.
+ENTRY = ROOT / "packaging" / "entry.py"
 
 # --- data files that must travel with the app --------------------------
 datas = []
@@ -25,7 +29,7 @@ for pkg in ("echopype", "xarray", "zarr", "numcodecs", "dask", "distributed"):
 
 # --- imports PyInstaller's static analysis cannot see ------------------
 hiddenimports = []
-for pkg in ("echopype", "xarray", "zarr", "numcodecs"):
+for pkg in ("nektone", "echopype", "xarray", "zarr", "numcodecs"):
     try:
         hiddenimports += collect_submodules(pkg)
     except Exception:

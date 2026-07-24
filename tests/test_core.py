@@ -224,3 +224,43 @@ def test_config_round_trip_covers_every_scalar_field():
         if f.name in {"env", "geometry", "mask", "noise", "binning"}:
             continue
         assert getattr(back.process, f.name) == getattr(cfg.process, f.name), f.name
+
+
+# --- frozen entry point ------------------------------------------------
+
+def test_frozen_entry_point_uses_absolute_imports():
+    """PyInstaller runs the entry script as a top-level module, so a relative
+    import there raises 'attempted relative import with no known parent
+    package' in the built .exe. Guard against reintroducing one."""
+    entry = Path(__file__).resolve().parents[1] / "packaging" / "entry.py"
+    assert entry.exists(), "packaging/entry.py is the frozen entry point"
+
+    tree = __import__("ast").parse(entry.read_text(encoding="utf-8"))
+    relative = [n for n in __import__("ast").walk(tree)
+                if isinstance(n, __import__("ast").ImportFrom) and n.level > 0]
+    assert not relative, f"relative imports in the frozen entry point: {relative}"
+
+
+def test_spec_points_at_the_launcher_not_the_package_dunder_main():
+    spec = (Path(__file__).resolve().parents[1] / "packaging" / "nektone.spec").read_text()
+    assert 'ROOT / "packaging" / "entry.py"' in spec
+    assert '"src" / "nektone" / "__main__.py"' not in spec.split("# NOT")[-1].split("ENTRY =")[-1]
+
+
+def test_selftest_covers_every_shipped_module():
+    """Every nektone module must appear in the frozen self-test, so a new file
+    that fails to package is caught by CI rather than by a user."""
+    import re
+
+    root = Path(__file__).resolve().parents[1]
+    entry = (root / "packaging" / "entry.py").read_text(encoding="utf-8")
+    listed = set(re.findall(r'"(nektone[\w.]*)"', entry))
+
+    shipped = set()
+    for path in (root / "src" / "nektone").rglob("*.py"):
+        if path.name in {"__init__.py", "__main__.py"}:
+            continue
+        rel = path.relative_to(root / "src").with_suffix("")
+        shipped.add(".".join(rel.parts))
+
+    assert not (shipped - listed), f"not covered by the self-test: {sorted(shipped - listed)}"
