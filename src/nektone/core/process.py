@@ -314,7 +314,7 @@ class ProcessResult:
         return ", ".join(bits)
 
 
-def _provenance(cfg: ProcessConfig) -> Dict[str, str]:
+def _provenance(cfg: ProcessConfig, patch_results=None) -> Dict[str, str]:
     m, n, b, g, e = cfg.mask, cfg.noise, cfg.binning, cfg.geometry, cfg.env
     bands = "; ".join(f"{lo}-{hi}m" for lo, hi in (m.exclude_bands or [])) or "none"
     return {
@@ -343,6 +343,25 @@ def _provenance(cfg: ProcessConfig) -> Dict[str, str]:
     }
 
 
+def _patch_provenance(patch_results) -> Dict[str, str]:
+    """Record which echopype patches were live for this run.
+
+    An interpolated calibration constant changes absolute Sv, so the product
+    file has to carry that fact. Without it, a NetCDF written today and one
+    written after an echopype upgrade look identical and are not.
+    """
+    from .echopype_patches import AZFP_SV_OFFSET_NOTE, PatchOutcome
+
+    if not patch_results:
+        return {"nektone_echopype_patches": "none"}
+    applied = [name for name, outcome in patch_results
+               if outcome in (PatchOutcome.APPLIED, PatchOutcome.ALREADY_OK)]
+    attrs = {"nektone_echopype_patches": "; ".join(applied) if applied else "none"}
+    if any("Sv offset" in name for name in applied):
+        attrs["nektone_sv_offset_note"] = AZFP_SV_OFFSET_NOTE
+    return attrs
+
+
 def run_processing(cfg: ProcessConfig, ctx: JobContext) -> ProcessResult:
     import xarray as xr
 
@@ -354,7 +373,7 @@ def run_processing(cfg: ProcessConfig, ctx: JobContext) -> ProcessResult:
     out_dir.mkdir(parents=True, exist_ok=True)
     result = ProcessResult(output_dir=out_dir)
 
-    apply_echopype_patches(ctx)
+    patch_results = apply_echopype_patches(ctx)
     configure_dask(cfg.dask_scheduler, ctx)
     baseline = _rss_mb()
     if baseline is not None:
@@ -436,6 +455,7 @@ def run_processing(cfg: ProcessConfig, ctx: JobContext) -> ProcessResult:
                 ds_month = ds_month.isel(ping_time=idx)
 
             ds_month.attrs.update(_provenance(cfg))
+            ds_month.attrs.update(_patch_provenance(patch_results))
             ds_month.attrs["nektone_source_files"] = str(len(file_list))
 
             tmp = save_path.with_suffix(".nc.part")

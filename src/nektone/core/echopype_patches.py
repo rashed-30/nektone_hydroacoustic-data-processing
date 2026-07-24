@@ -80,8 +80,14 @@ def set_mapping_entry(module_path: str, attr: str, key: Any, value: Any,
 
 
 def set_nested_entry(module_path: str, attr: str, keys: tuple, value: Any,
-                     overwrite: bool = False) -> str:
-    """Same, for a table nested one or more levels deep: table[k1][k2] = value."""
+                     overwrite: bool = False, create_missing: bool = False) -> str:
+    """Same, for a table nested one or more levels deep: table[k1][k2] = value.
+
+    `create_missing` is False on purpose. If the outer key is absent, echopype
+    has probably restructured the table, and inventing `{k1: {k2: value}}` would
+    write a plausible-looking entry into the wrong place — worse than not
+    patching at all, because it fails silently and produces wrong numbers.
+    """
     try:
         module = importlib.import_module(module_path)
     except ImportError:
@@ -94,6 +100,8 @@ def set_nested_entry(module_path: str, attr: str, keys: tuple, value: Any,
     try:
         for k in keys[:-1]:
             if k not in node:
+                if not create_missing:
+                    return PatchOutcome.NOT_NEEDED
                 node[k] = {}
             node = node[k]
         last = keys[-1]
@@ -107,14 +115,35 @@ def set_nested_entry(module_path: str, attr: str, keys: tuple, value: Any,
 
 # ---------------------------------------------------------------------------
 # The patch registry.
-#
-# TODO(rashed): the AZFP 200 kHz / 200 ms constant goes here. Paste the line you
-# edited in your local echopype (module path, table name, key, value) and it
-# becomes a two-line entry below. Until then the app uses stock echopype, which
-# means 200 kHz data recorded at a 200 ms ping period will convert with the
-# wrong constant — or fail outright, depending on your version.
 # ---------------------------------------------------------------------------
-PATCHES: List[Patch] = []
+
+# echopype's AZFP Sv-offset lookup (echopype.convert.parse_azfp.SV_OFFSET) is a
+# nested table: frequency in Hz -> pulse length in microseconds -> offset in dB.
+# The 200 kHz row has entries for 150 us and 250 us but not 200 us, so any AZFP
+# file with a 200 kHz channel at a 200 us pulse raises:
+#
+#   ValueError: Pulse length 200 us is not in the Sv offset dictionary ...
+#
+# 1.35 dB is the midpoint of the neighbouring 150 us (1.4) and 250 us (1.3)
+# entries. It is an interpolation, not a manufacturer figure — see AZFP_SV_OFFSET_NOTE.
+AZFP_SV_OFFSET_NOTE = (
+    "200 kHz / 200 us Sv offset = 1.35 dB, linearly interpolated between the "
+    "150 us (1.4) and 250 us (1.3) entries. Not a manufacturer-supplied value; "
+    "confirm against your ASL calibration sheet before publishing absolute Sv."
+)
+
+PATCHES: List[Patch] = [
+    Patch(
+        name="AZFP 200 kHz / 200 us Sv offset",
+        apply=lambda: set_nested_entry(
+            "echopype.convert.parse_azfp",
+            "SV_OFFSET",
+            keys=(200000.0, 200),
+            value=1.35,
+        ),
+        note=AZFP_SV_OFFSET_NOTE,
+    ),
+]
 
 
 def apply_all(ctx=None) -> List[tuple]:
@@ -129,6 +158,10 @@ def apply_all(ctx=None) -> List[tuple]:
         if ctx:
             level = "warning" if "failed" in outcome else "info"
             ctx.log(f"echopype patch — {patch.name}: {outcome}", level)
+            # An approximated constant must never be applied silently: it ends
+            # up in published Sv values, so it belongs in the run log.
+            if patch.note and outcome == PatchOutcome.APPLIED:
+                ctx.log(f"    note: {patch.note}", "warning")
     if ctx and not PATCHES:
         ctx.log("echopype patches: none registered (using stock echopype).", "info")
     return results

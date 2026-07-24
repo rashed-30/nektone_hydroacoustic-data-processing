@@ -229,10 +229,32 @@ they travel with this repository. Patches are idempotent, degrade to a logged
 no-op if an upgrade renames the target, and are reported by
 `nektone-cli patches`.
 
-> **Outstanding:** the AZFP 200 kHz / 200 ms ping-period constant is **not**
-> carried over — it was a local edit to your echopype install and was not in the
-> uploaded scripts. Until it is registered, 200 kHz data at a 200 ms ping period
-> will use stock echopype's value. See the `TODO` in that file.
+### Registered patches
+
+**AZFP 200 kHz / 200 µs Sv offset.** `echopype.convert.parse_azfp.SV_OFFSET`
+maps frequency (Hz) → pulse length (µs) → offset (dB). The 200 kHz row has
+150 µs and 250 µs but no 200 µs entry, so any AZFP file with a 200 kHz channel
+at a 200 µs pulse fails with:
+
+```
+ValueError: Pulse length 200 us is not in the Sv offset dictionary
+```
+
+The patch inserts **1.35 dB**, the midpoint of the neighbouring 1.4 and 1.3
+entries.
+
+> ⚠️ **1.35 dB is interpolated, not a manufacturer figure.** It shifts absolute
+> Sv on that channel by up to ±0.05 dB relative to the true value. Confirm it
+> against your ASL Environmental Sciences calibration sheet before publishing
+> absolute backscatter, and state it in your methods. The app logs a warning
+> each time the patch is applied, and writes both the patch list and this
+> caveat into every output file as `nektone_echopype_patches` and
+> `nektone_sv_offset_note` — so a product can never be separated from the
+> assumption behind it.
+
+The patch defers to upstream: if echopype ever ships its own 200 µs value, the
+existing entry wins. If the table is restructured, the patch reports
+"not needed" rather than fabricating a row in the wrong place.
 
 ---
 

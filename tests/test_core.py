@@ -264,3 +264,85 @@ def test_selftest_covers_every_shipped_module():
         shipped.add(".".join(rel.parts))
 
     assert not (shipped - listed), f"not covered by the self-test: {sorted(shipped - listed)}"
+
+
+# --- the AZFP Sv-offset patch -----------------------------------------
+
+def _fake_parse_azfp(with_200us=False):
+    """Mimic echopype.convert.parse_azfp.SV_OFFSET: Hz -> microseconds -> dB."""
+    import types
+
+    mod = types.ModuleType("echopype.convert.parse_azfp")
+    row = {150: 1.4, 250: 1.3, 300: 1.3, 500: 1.25}
+    if with_200us:
+        row[200] = 9.99
+    mod.SV_OFFSET = {
+        38000.0: {150: 1.4, 250: 1.3},
+        125000.0: {150: 1.4, 250: 1.3},
+        200000.0: row,
+    }
+    sys.modules["echopype.convert.parse_azfp"] = mod
+    return mod
+
+
+def test_azfp_sv_offset_patch_is_registered():
+    from nektone.core import echopype_patches as ep
+
+    names = [p.name for p in ep.PATCHES]
+    assert any("200 kHz" in n and "Sv offset" in n for n in names), names
+
+
+def test_azfp_sv_offset_patch_inserts_the_missing_entry():
+    from nektone.core import echopype_patches as ep
+
+    mod = _fake_parse_azfp(with_200us=False)
+    try:
+        assert 200 not in mod.SV_OFFSET[200000.0]
+        results = ep.apply_all()
+        assert ("AZFP 200 kHz / 200 us Sv offset", "applied") in results
+        assert mod.SV_OFFSET[200000.0][200] == 1.35
+        # neighbours untouched
+        assert mod.SV_OFFSET[200000.0][150] == 1.4
+        assert mod.SV_OFFSET[200000.0][250] == 1.3
+        # other frequencies untouched
+        assert 200 not in mod.SV_OFFSET[38000.0]
+    finally:
+        del sys.modules["echopype.convert.parse_azfp"]
+
+
+def test_azfp_patch_defers_to_upstream_if_they_add_the_key():
+    """If echopype ships its own 200 us value, ours must not clobber it."""
+    from nektone.core import echopype_patches as ep
+
+    mod = _fake_parse_azfp(with_200us=True)
+    try:
+        ep.apply_all()
+        assert mod.SV_OFFSET[200000.0][200] == 9.99
+    finally:
+        del sys.modules["echopype.convert.parse_azfp"]
+
+
+def test_azfp_patch_does_not_invent_a_missing_frequency_row():
+    """A restructured table must be left alone, not silently fabricated."""
+    import types
+
+    from nektone.core import echopype_patches as ep
+
+    mod = types.ModuleType("echopype.convert.parse_azfp")
+    mod.SV_OFFSET = {38000.0: {150: 1.4}}          # no 200 kHz row at all
+    sys.modules["echopype.convert.parse_azfp"] = mod
+    try:
+        results = dict(ep.apply_all())
+        assert results["AZFP 200 kHz / 200 us Sv offset"].startswith("not needed")
+        assert 200000.0 not in mod.SV_OFFSET
+    finally:
+        del sys.modules["echopype.convert.parse_azfp"]
+
+
+def test_patch_provenance_lands_in_output_attributes():
+    from nektone.core.process import _patch_provenance
+
+    attrs = _patch_provenance([("AZFP 200 kHz / 200 us Sv offset", "applied")])
+    assert "200 kHz" in attrs["nektone_echopype_patches"]
+    assert "interpolated" in attrs["nektone_sv_offset_note"]
+    assert _patch_provenance([])["nektone_echopype_patches"] == "none"

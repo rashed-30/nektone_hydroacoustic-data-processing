@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nektone"
-version = "1.0.1"
+version = "1.0.2"
 description = "A batch desktop GUI for the echopype AZFP hydroacoustic processing pipeline"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
