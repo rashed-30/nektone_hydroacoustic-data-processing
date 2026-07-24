@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nektone"
-version = "1.0.2"
+version = "1.0.3"
 description = "A batch desktop GUI for the echopype AZFP hydroacoustic processing pipeline"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
@@ -21,6 +21,7 @@ dependencies = [
     "pandas>=2.0",
     "scipy>=1.10",
     "dask[array]>=2023.1",
+    "flox>=0.9",          # echopype.commongrid.compute_MVBS uses flox.xarray
     "zarr>=2.14",
     "matplotlib>=3.7",
     "PySide6>=6.6",

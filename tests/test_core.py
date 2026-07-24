@@ -346,3 +346,36 @@ def test_patch_provenance_lands_in_output_attributes():
     assert "200 kHz" in attrs["nektone_echopype_patches"]
     assert "interpolated" in attrs["nektone_sv_offset_note"]
     assert _patch_provenance([])["nektone_echopype_patches"] == "none"
+
+
+# --- packaging: metadata, not just modules -----------------------------
+
+def test_spec_copies_metadata_for_flox():
+    """`import flox` can succeed in a frozen build while its .dist-info is
+    absent, which fails as "No package metadata was found for flox" inside
+    compute_MVBS. copy_metadata is the fix; make sure it stays."""
+    spec = (Path(__file__).resolve().parents[1] / "packaging" / "nektone.spec").read_text()
+    assert "copy_metadata" in spec
+    metadata_block = spec.split("copy_metadata(")[0]
+    assert '"flox"' in metadata_block, "flox must be in the copy_metadata loop"
+
+
+def test_flox_is_a_declared_dependency():
+    pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text()
+    assert "flox" in pyproject, "compute_MVBS requires flox; declare it explicitly"
+
+
+def test_selftest_verifies_metadata_not_only_imports():
+    entry = (Path(__file__).resolve().parents[1] / "packaging" / "entry.py").read_text()
+    assert "SELFTEST_METADATA" in entry
+    assert "importlib.metadata" in entry or "from importlib.metadata import version" in entry
+    assert '"flox",' in entry
+
+
+def test_binning_backend_check_returns_none_or_a_string():
+    from nektone.core.process import check_binning_backend
+
+    result = check_binning_backend()
+    assert result is None or isinstance(result, str)
+    if isinstance(result, str):
+        assert "flox" in result

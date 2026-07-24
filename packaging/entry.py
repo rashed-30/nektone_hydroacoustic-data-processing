@@ -57,6 +57,30 @@ SELFTEST_MODULES = [
     "numpy",
     "matplotlib.backends.backend_qtagg",
     "PySide6.QtWidgets",
+    # grouped binning backend used by echopype.commongrid.compute_MVBS
+    "flox",
+    "flox.xarray",
+]
+
+# Distributions whose *installed metadata* must also be bundled.
+#
+# PyInstaller ships a package's code but not its .dist-info directory, so a
+# library that calls importlib.metadata.version("x") at import time fails with
+# "No package metadata was found for x" even though `import x` worked. Checking
+# imports alone will not catch it — this list is why the check exists.
+SELFTEST_METADATA = [
+    "echopype",
+    "xarray",
+    "flox",
+    "dask",
+    "zarr",
+    "numcodecs",
+    "netCDF4",
+    "numpy",
+    "pandas",
+    "scipy",
+    "matplotlib",
+    "PySide6",
 ]
 
 
@@ -88,14 +112,32 @@ def selftest() -> int:
             version = getattr(module, "__version__", "")
             lines.append(f"  ok    {name}{'  ' + version if version else ''}")
 
+    lines.append("")
+    lines.append("Package metadata:")
+    meta_failures = []
+    for dist in SELFTEST_METADATA:
+        try:
+            from importlib.metadata import version
+            lines.append(f"  ok    {dist}  {version(dist)}")
+        except Exception as exc:  # noqa: BLE001
+            meta_failures.append(dist)
+            lines.append(f"  FAIL  {dist}  ({type(exc).__name__}: {exc})")
+
     if failures:
         lines += [
             "",
             f"{len(failures)} module(s) failed to import: {', '.join(failures)}",
             "Add the missing name(s) to `hiddenimports` in packaging/nektone.spec.",
         ]
-    else:
-        lines += ["", f"All {len(SELFTEST_MODULES)} modules imported successfully."]
+    if meta_failures:
+        lines += [
+            "",
+            f"{len(meta_failures)} distribution(s) missing metadata: {', '.join(meta_failures)}",
+            "Add the name(s) to the copy_metadata() loop in packaging/nektone.spec.",
+        ]
+    if not failures and not meta_failures:
+        lines += ["", f"All {len(SELFTEST_MODULES)} modules and "
+                      f"{len(SELFTEST_METADATA)} distributions verified."]
 
     report = "\n".join(lines)
     try:
@@ -107,7 +149,7 @@ def selftest() -> int:
     except OSError:
         pass
 
-    return 1 if failures else 0
+    return 1 if (failures or meta_failures) else 0
 
 
 if __name__ == "__main__":

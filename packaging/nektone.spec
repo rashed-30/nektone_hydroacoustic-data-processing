@@ -10,7 +10,7 @@ PyInstaller is not a cross-compiler: build the Windows .exe on Windows.
 import sys
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
 
 ROOT = Path(SPECPATH).parent
 # NOT src/nektone/__main__.py: PyInstaller runs the entry script as a
@@ -21,15 +21,28 @@ ENTRY = ROOT / "packaging" / "entry.py"
 
 # --- data files that must travel with the app --------------------------
 datas = []
-for pkg in ("echopype", "xarray", "zarr", "numcodecs", "dask", "distributed"):
+for pkg in ("echopype", "xarray", "zarr", "numcodecs", "dask", "distributed", "flox"):
     try:
         datas += collect_data_files(pkg)
     except Exception:
         pass
 
+# --- package metadata (.dist-info) -------------------------------------
+# PyInstaller bundles a package's *code* but not its installed metadata. Any
+# library that calls importlib.metadata.version("x") at import time then fails
+# with "No package metadata was found for x" even though `import x` succeeds.
+# flox is the one that bites here: echopype.commongrid.compute_MVBS imports
+# flox.xarray, so without this the Convert tab works and Process & bin does not.
+for pkg in ("echopype", "xarray", "flox", "dask", "zarr", "numcodecs",
+            "netCDF4", "h5netcdf", "numpy", "pandas", "scipy", "matplotlib"):
+    try:
+        datas += copy_metadata(pkg, recursive=True)
+    except Exception:
+        pass
+
 # --- imports PyInstaller's static analysis cannot see ------------------
 hiddenimports = []
-for pkg in ("nektone", "echopype", "xarray", "zarr", "numcodecs"):
+for pkg in ("nektone", "echopype", "xarray", "zarr", "numcodecs", "flox"):
     try:
         hiddenimports += collect_submodules(pkg)
     except Exception:
@@ -46,6 +59,8 @@ hiddenimports += [
     "scipy.spatial.transform._rotation_groups",
     "pandas._libs.tslibs.base", "numpy.core._dtype_ctypes",
     "dask.array", "dask.dataframe",
+    # grouped binning backend
+    "flox", "flox.xarray", "flox.core", "numpy_groupies",
     # plotting
     "matplotlib.backends.backend_qtagg", "matplotlib.backends.backend_agg",
     # timezone database used by the solar-window metrics

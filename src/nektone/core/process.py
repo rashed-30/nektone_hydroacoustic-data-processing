@@ -88,6 +88,34 @@ def configure_dask(mode: str, ctx=None) -> None:
         pass
 
 
+def check_binning_backend() -> Optional[str]:
+    """Verify flox is usable before a long batch starts.
+
+    echopype.commongrid.compute_MVBS calls flox.xarray.xarray_reduce. In a
+    frozen build flox's code can be present while its .dist-info is not, so
+    `import flox` succeeds and the version lookup then fails deep inside the
+    first file. Checking up front turns a cryptic mid-batch error into a
+    message that says what to do. Returns None if fine, else an explanation.
+    """
+    try:
+        import flox  # noqa: F401
+        import flox.xarray  # noqa: F401
+    except ImportError as exc:
+        return (f"The binning backend 'flox' is not available ({exc}).\n\n"
+                "echopype needs it for compute_MVBS. Install it with:\n"
+                "    pip install flox")
+    try:
+        from importlib.metadata import version
+        version("flox")
+    except Exception:  # noqa: BLE001
+        return ("flox is installed but its package metadata is missing "
+                "(\"No package metadata was found for flox\").\n\n"
+                "This is a packaging fault in a frozen build, not a problem "
+                "with your data. Rebuild with copy_metadata('flox') present in "
+                "packaging/nektone.spec, or run from source instead.")
+    return None
+
+
 def _rss_mb() -> Optional[float]:
     """Resident memory in MB, if psutil is available."""
     try:
@@ -372,6 +400,10 @@ def run_processing(cfg: ProcessConfig, ctx: JobContext) -> ProcessResult:
     out_dir = cfg.resolved_output_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
     result = ProcessResult(output_dir=out_dir)
+
+    problem = check_binning_backend()
+    if problem:
+        raise RuntimeError(problem)
 
     patch_results = apply_echopype_patches(ctx)
     configure_dask(cfg.dask_scheduler, ctx)
