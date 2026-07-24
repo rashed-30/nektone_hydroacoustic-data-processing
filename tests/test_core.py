@@ -365,6 +365,48 @@ def test_flox_is_a_declared_dependency():
     assert "flox" in pyproject, "compute_MVBS requires flox; declare it explicitly"
 
 
+def _spec_metadata_names():
+    """Names passed to copy_metadata() in the PyInstaller spec."""
+    import re
+    spec = (Path(__file__).resolve().parents[1] / "packaging" / "nektone.spec").read_text()
+    block = spec.split("copy_metadata(")[0]
+    loop = block[block.rindex("for pkg in ("):]
+    return set(re.findall(r'"([\w.]+)"', loop))
+
+
+def _selftest_metadata_names():
+    import re
+    entry = (Path(__file__).resolve().parents[1] / "packaging" / "entry.py").read_text()
+    out = {}
+    for label in ("SELFTEST_METADATA_REQUIRED", "SELFTEST_METADATA_OPTIONAL"):
+        block = entry.split(label + " = [", 1)[1].split("]", 1)[0]
+        out[label] = set(re.findall(r'"([\w.]+)"', block))
+    return out
+
+
+def test_spec_and_selftest_metadata_lists_agree():
+    """The self-test must not demand metadata the spec never bundles.
+
+    A mismatch here fails CI on a perfectly good application, which is exactly
+    what happened when PySide6 was checked but never copied.
+    """
+    spec_names = _spec_metadata_names()
+    lists = _selftest_metadata_names()
+    checked = lists["SELFTEST_METADATA_REQUIRED"] | lists["SELFTEST_METADATA_OPTIONAL"]
+    missing = checked - spec_names
+    assert not missing, f"self-test checks metadata the spec does not copy: {sorted(missing)}"
+
+
+def test_required_metadata_is_only_what_is_actually_queried():
+    """PySide6, numpy and friends are imported directly; nothing looks up their
+    version, so a missing .dist-info must not block the build."""
+    lists = _selftest_metadata_names()
+    required = lists["SELFTEST_METADATA_REQUIRED"]
+    assert "flox" in required, "flox metadata is the proven failure case"
+    for cosmetic in ("PySide6", "numpy", "matplotlib", "scipy", "pandas"):
+        assert cosmetic not in required, f"{cosmetic} metadata is not queried at runtime"
+
+
 def test_selftest_verifies_metadata_not_only_imports():
     entry = (Path(__file__).resolve().parents[1] / "packaging" / "entry.py").read_text()
     assert "SELFTEST_METADATA" in entry

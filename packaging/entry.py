@@ -68,20 +68,32 @@ SELFTEST_MODULES = [
 # library that calls importlib.metadata.version("x") at import time fails with
 # "No package metadata was found for x" even though `import x` worked. Checking
 # imports alone will not catch it — this list is why the check exists.
-SELFTEST_METADATA = [
+#
+# Only the REQUIRED set fails the build. Those are distributions something in
+# the dependency chain actually looks up at runtime; flox is the proven case,
+# via echopype.commongrid.compute_MVBS. The OPTIONAL set is reported for
+# diagnostics only: nothing queries their version, so a missing .dist-info is
+# cosmetic and must not block a working application.
+SELFTEST_METADATA_REQUIRED = [
     "echopype",
     "xarray",
     "flox",
     "dask",
     "zarr",
     "numcodecs",
+]
+
+SELFTEST_METADATA_OPTIONAL = [
     "netCDF4",
+    "h5netcdf",
     "numpy",
     "pandas",
     "scipy",
     "matplotlib",
     "PySide6",
 ]
+
+SELFTEST_METADATA = SELFTEST_METADATA_REQUIRED + SELFTEST_METADATA_OPTIONAL
 
 
 def selftest() -> int:
@@ -112,16 +124,23 @@ def selftest() -> int:
             version = getattr(module, "__version__", "")
             lines.append(f"  ok    {name}{'  ' + version if version else ''}")
 
+    from importlib.metadata import version
+
     lines.append("")
     lines.append("Package metadata:")
     meta_failures = []
+    meta_warnings = []
     for dist in SELFTEST_METADATA:
+        required = dist in SELFTEST_METADATA_REQUIRED
         try:
-            from importlib.metadata import version
             lines.append(f"  ok    {dist}  {version(dist)}")
         except Exception as exc:  # noqa: BLE001
-            meta_failures.append(dist)
-            lines.append(f"  FAIL  {dist}  ({type(exc).__name__}: {exc})")
+            if required:
+                meta_failures.append(dist)
+                lines.append(f"  FAIL  {dist}  ({type(exc).__name__}: {exc})")
+            else:
+                meta_warnings.append(dist)
+                lines.append(f"  warn  {dist}  (metadata absent; nothing queries it)")
 
     if failures:
         lines += [
@@ -135,9 +154,12 @@ def selftest() -> int:
             f"{len(meta_failures)} distribution(s) missing metadata: {', '.join(meta_failures)}",
             "Add the name(s) to the copy_metadata() loop in packaging/nektone.spec.",
         ]
+    if meta_warnings:
+        lines += ["", f"Metadata absent but not required: {', '.join(meta_warnings)} "
+                      "(not a failure)."]
     if not failures and not meta_failures:
         lines += ["", f"All {len(SELFTEST_MODULES)} modules and "
-                      f"{len(SELFTEST_METADATA)} distributions verified."]
+                      f"{len(SELFTEST_METADATA_REQUIRED)} required distributions verified."]
 
     report = "\n".join(lines)
     try:

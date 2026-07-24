@@ -33,8 +33,11 @@ for pkg in ("echopype", "xarray", "zarr", "numcodecs", "dask", "distributed", "f
 # with "No package metadata was found for x" even though `import x` succeeds.
 # flox is the one that bites here: echopype.commongrid.compute_MVBS imports
 # flox.xarray, so without this the Convert tab works and Process & bin does not.
+# Keep this list in step with SELFTEST_METADATA in packaging/entry.py, or the
+# self-test will demand metadata the build was never told to include.
 for pkg in ("echopype", "xarray", "flox", "dask", "zarr", "numcodecs",
-            "netCDF4", "h5netcdf", "numpy", "pandas", "scipy", "matplotlib"):
+            "netCDF4", "h5netcdf", "numpy", "pandas", "scipy", "matplotlib",
+            "PySide6"):
     try:
         datas += copy_metadata(pkg, recursive=True)
     except Exception:
