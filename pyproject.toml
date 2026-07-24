@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nektone"
+version = "1.0.0"
+description = "A batch desktop GUI for the echopype AZFP hydroacoustic processing pipeline"
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+license = { text = "MIT" }
+authors = [{ name = "NekTone contributors" }]
+keywords = ["echopype", "AZFP", "hydroacoustics", "echosounder", "DVM"]
+
+dependencies = [
+    "echopype>=0.9",
+    "xarray>=2023.1",
+    "netCDF4>=1.6",
+    "h5netcdf>=1.1",
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "scipy>=1.10",
+    "dask[array]>=2023.1",
+    "zarr>=2.14",
+    "matplotlib>=3.7",
+    "PySide6>=6.6",
+    "tzdata; sys_platform == 'win32'",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "pyinstaller>=6.3"]
+
+[project.scripts]
+nektone-cli = "nektone.cli:main"
+
+[project.gui-scripts]
+nektone = "nektone.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
