@@ -1,11 +1,10 @@
 # NekTone
 
-A desktop GUI for the [echopype](https://echopype.readthedocs.io/) AZFP processing
-pipeline. It reproduces the notebook workflow — raw `.01A` → converted NetCDF →
+NekTone is a desktop GUI for active hydroacoustic data processing which utilizes the open source python  library [echopype](https://echopype.readthedocs.io/) to convert, calibrate and bin acoustic data. It reproduces the notebook workflow — raw data → converted NetCDF →
 calibrated, masked, denoised, binned monthly products → baseline metrics — as a
-batch application that a non-programmer can drive.
+batch application that any non-programmer can drive.
 
-Built for moored, multi-frequency AZFP deployments where a single deployment folder
+Originally built for moored, multi-frequency AZFP deployments where a single deployment folder
 holds thousands of hourly files.
 
 ---
